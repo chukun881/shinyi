@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grand Luxury Tree Final v2</title>
+    <title>Grand Luxury Tree Final v3</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Times New Roman', serif; }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
@@ -16,7 +16,6 @@
             align-items: center;
             padding-top: 40px;
             box-sizing: border-box;
-            /* Remove transition here as we don't hide the whole layer anymore */
         }
         
         /* When hidden class is applied to specific elements */
@@ -52,50 +51,26 @@
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             font-family: 'Cinzel', 'Times New Roman', serif;
             opacity: 0.9;
-            transition: opacity 0.5s ease; /* Ensure smooth transitions if needed */
+            transition: opacity 0.5s ease;
         }
 
-        /* Upload Button - Restored & Elegant */
-        .upload-wrapper {
-            margin-top: 20px;
-            pointer-events: auto;
-            text-align: center;
-            transition: opacity 0.5s ease; /* Add transition for smooth hiding */
-        }
-        .upload-btn {
-            background: rgba(20, 20, 20, 0.6); 
-            border: 1px solid rgba(212, 175, 55, 0.4); 
-            color: #d4af37; 
-            padding: 10px 25px; 
-            cursor: pointer; 
-            text-transform: uppercase; 
-            letter-spacing: 3px; 
-            font-size: 10px;
-            transition: all 0.4s;
-            display: inline-block;
-            backdrop-filter: blur(5px);
-        }
-        .upload-btn:hover { 
-            background: #d4af37; 
-            color: #000; 
-            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
-        }
+        /* Control Hint - Restored & Elegant */
         .hint-text {
             color: rgba(212, 175, 55, 0.5);
             font-size: 9px;
-            margin-top: 8px;
+            margin-top: 20px; /* Adjusted margin since upload button is gone */
             letter-spacing: 1px;
             text-transform: uppercase;
+            pointer-events: auto; /* Re-enable pointer events for the hint if needed for controls */
+            transition: opacity 0.5s ease;
         }
-
-        #file-input { display: none; }
 
         /* Webcam feedback */
         #webcam-wrapper {
             position: absolute; bottom: 40px; right: 40px;
             width: 120px; height: 90px;
             border: 1px solid rgba(255,255,255,0.1);
-            overflow: hidden; opacity: 0; /* Hidden by default but functional */
+            overflow: hidden; opacity: 0;
             pointer-events: none;
         }
     </style>
@@ -126,16 +101,9 @@
     <div id="ui-layer">
         <h1>Merry Christmas</h1>
         
-        <div class="upload-wrapper">
-            <label class="upload-btn">
-                Add Memories
-                <input type="file" id="file-input" multiple accept="image/*">
-            </label>
-            <div class="hint-text">Press 'H' to Hide Controls</div>
-        </div>
+        <div class="hint-text" id="controls-hint">Press 'H' to Hide Controls (Webcam Mode)</div>
     </div>
 
-    <!-- Webcam hidden structure -->
     <div id="webcam-wrapper">
         <video id="webcam" autoplay playsinline style="display:none;"></video>
         <canvas id="webcam-preview"></canvas>
@@ -150,22 +118,40 @@
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
         import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
+        // =========================================================
+        // === CUSTOM CONFIGURATION (EDIT THIS SECTION) ===
+        // =========================================================
+        /**
+         * ⚠️ IMPORTANT: List all your image files here. 
+         * Ensure these files exist in a folder named 'assets/' relative to this HTML file.
+         */
+        const IMAGE_ASSET_PATHS = [
+            'assets/1.jpg',
+            'assets/3.png',
+            'assets/2.jpeg',
+            'assets/4.jpg',
+            'assets/5.jpg',
+            'assets/6.jpg'
+            // Add or remove your custom paths here!
+        ];
+        // =========================================================
+
         // --- CONFIGURATION ---
         const CONFIG = {
             colors: {
                 bg: 0x000000, 
                 champagneGold: 0xffd966, 
-                deepGreen: 0x03180a,     
-                accentRed: 0x990000,     
+                deepGreen: 0x03180a,      
+                accentRed: 0x990000,      
             },
             particles: {
-                count: 1500,     
-                dustCount: 2500, 
-                treeHeight: 24,  
+                count: 1500,      
+                dustCount: 2500,  
+                treeHeight: 24,   
                 treeRadius: 8    
             },
             camera: {
-                z: 50 
+                z: 50
             }
         };
 
@@ -191,8 +177,8 @@
             setupLights();
             createTextures();
             createParticles(); 
-            createDust();     
-            createDefaultPhotos();
+            createDust();      
+            createDefaultPhotos(); // Calls the function to randomly load your assets
             setupPostProcessing();
             setupEvents();
             await initMediaPipe();
@@ -293,7 +279,6 @@
                 this.baseScale = mesh.scale.x; 
 
                 // Individual Spin Speed
-                // Photos spin slower to be readable
                 const speedMult = (type === 'PHOTO') ? 0.3 : 2.0;
 
                 this.spinSpeed = new THREE.Vector3(
@@ -347,11 +332,11 @@
                 const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0; 
                 this.mesh.position.lerp(target, lerpSpeed * dt);
 
-                // Rotation Logic - CRITICAL: Ensure spin happens in Scatter
+                // Rotation Logic
                 if (mode === 'SCATTER') {
                     this.mesh.rotation.x += this.spinSpeed.x * dt;
                     this.mesh.rotation.y += this.spinSpeed.y * dt;
-                    this.mesh.rotation.z += this.spinSpeed.z * dt; // Added Z for more natural tumble
+                    this.mesh.rotation.z += this.spinSpeed.z * dt;
                 } else if (mode === 'TREE') {
                     // Reset rotations slowly
                     this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
@@ -394,7 +379,7 @@
                 color: CONFIG.colors.champagneGold,
                 metalness: 1.0, roughness: 0.1,
                 envMapIntensity: 2.0, 
-                emissive: 0x443300,   
+                emissive: 0x443300,    
                 emissiveIntensity: 0.3
             });
 
@@ -466,7 +451,42 @@
             }
         }
 
+        /**
+         * Loads a random image from the IMAGE_ASSET_PATHS array.
+         */
         function createDefaultPhotos() {
+            const loader = new THREE.TextureLoader();
+            
+            if (IMAGE_ASSET_PATHS.length === 0) {
+                createFallbackTextPhoto();
+                return;
+            }
+            
+            // Randomly select an image path
+            const randomIndex = Math.floor(Math.random() * IMAGE_ASSET_PATHS.length);
+            const imagePath = IMAGE_ASSET_PATHS[randomIndex];
+            
+            // Load the selected image
+            loader.load(imagePath, (t) => {
+                t.colorSpace = THREE.SRGBColorSpace;
+                
+                // Add the main photo and three clones as ornaments
+                addPhotoToScene(t);
+                addPhotoToScene(t.clone());
+                addPhotoToScene(t.clone());
+                addPhotoToScene(t.clone());
+
+            }, undefined, (error) => {
+                console.error('An error occurred while loading the preset image:', imagePath, error);
+                // Fallback if the image fails to load (e.g., wrong path)
+                createFallbackTextPhoto(); 
+            });
+        }
+        
+        /**
+         * Fallback function that creates a text-based photo ornament.
+         */
+        function createFallbackTextPhoto() {
             const canvas = document.createElement('canvas');
             canvas.width = 512; canvas.height = 512;
             const ctx = canvas.getContext('2d');
@@ -481,6 +501,7 @@
             tex.colorSpace = THREE.SRGBColorSpace;
             addPhotoToScene(tex);
         }
+
 
         function addPhotoToScene(texture) {
             const frameGeo = new THREE.BoxGeometry(1.4, 1.4, 0.05);
@@ -503,21 +524,6 @@
             particleSystem.push(new Particle(group, 'PHOTO', false));
         }
         
-        function handleImageUpload(e) {
-            const files = e.target.files;
-            if(!files.length) return;
-            Array.from(files).forEach(f => {
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    new THREE.TextureLoader().load(ev.target.result, (t) => {
-                        t.colorSpace = THREE.SRGBColorSpace;
-                        addPhotoToScene(t);
-                    });
-                }
-                reader.readAsDataURL(f);
-            });
-        }
-
         // --- MEDIAPIPE ---
         async function initMediaPipe() {
             video = document.getElementById('webcam');
@@ -595,13 +601,12 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 composer.setSize(window.innerWidth, window.innerHeight);
             });
-            document.getElementById('file-input').addEventListener('change', handleImageUpload);
             
-            // Toggle UI logic - ONLY hide controls, keep title
+            // Toggle UI logic - ONLY hide controls hint
             window.addEventListener('keydown', (e) => {
                 if (e.key.toLowerCase() === 'h') {
-                    const controls = document.querySelector('.upload-wrapper');
-                    if (controls) controls.classList.toggle('ui-hidden');
+                    const hint = document.getElementById('controls-hint');
+                    if (hint) hint.classList.toggle('ui-hidden');
                 }
             });
         }
