@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grand Luxury Tree Final v3</title>
+    <title>Grand Luxury Tree Final v4 (Mouse Controlled)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Times New Roman', serif; }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
@@ -18,7 +18,6 @@
             box-sizing: border-box;
         }
         
-        /* When hidden class is applied to specific elements */
         .ui-hidden {
             opacity: 0;
             pointer-events: none !important;
@@ -54,25 +53,19 @@
             transition: opacity 0.5s ease;
         }
 
-        /* Control Hint - Restored & Elegant */
+        /* Control Hint */
         .hint-text {
             color: rgba(212, 175, 55, 0.5);
             font-size: 9px;
-            margin-top: 20px; /* Adjusted margin since upload button is gone */
+            margin-top: 20px;
             letter-spacing: 1px;
             text-transform: uppercase;
-            pointer-events: auto; /* Re-enable pointer events for the hint if needed for controls */
+            pointer-events: auto;
             transition: opacity 0.5s ease;
         }
 
-        /* Webcam feedback */
-        #webcam-wrapper {
-            position: absolute; bottom: 40px; right: 40px;
-            width: 120px; height: 90px;
-            border: 1px solid rgba(255,255,255,0.1);
-            overflow: hidden; opacity: 0;
-            pointer-events: none;
-        }
+        /* Webcam feedback - Removed, but keeping general style for cleanup */
+        #webcam-wrapper { display: none; }
     </style>
     
     <style>
@@ -83,8 +76,8 @@
         {
             "imports": {
                 "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-                "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm"
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+                /* MediaPipe import removed */
             }
         }
     </script>
@@ -101,13 +94,12 @@
     <div id="ui-layer">
         <h1>Merry Christmas</h1>
         
-        <div class="hint-text" id="controls-hint">Press 'H' to Hide Controls (Webcam Mode)</div>
+        <div class="hint-text" id="controls-hint">
+            Click photo to **Focus** | Double-Click to **Reset** | Drag to **Rotate**
+        </div>
     </div>
 
-    <div id="webcam-wrapper">
-        <video id="webcam" autoplay playsinline style="display:none;"></video>
-        <canvas id="webcam-preview"></canvas>
-    </div>
+    <div id="webcam-wrapper"></div> 
 
     <script type="module">
         import * as THREE from 'three';
@@ -116,17 +108,12 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
-        import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
         // =========================================================
-        // === CUSTOM CONFIGURATION (EDIT THIS SECTION) ===
+        // === CUSTOM CONFIGURATION (ASSET LIST) ===
         // =========================================================
-        /**
-         * ⚠️ IMPORTANT: List all your image files here. 
-         * Ensure these files exist in a folder named 'assets/' relative to this HTML file.
-         */
         const IMAGE_ASSET_PATHS = [
-           'assets/1.jpg',
+            'assets/1.jpg',
             'assets/2.jpg',
             'assets/3.jpg',
             'assets/4.jpg',
@@ -154,9 +141,9 @@
             'assets/26.jpg',
             'assets/27.jpg',
             'assets/28.jpg'
-            // Add or remove your custom paths here!
         ];
         // =========================================================
+
 
         // --- CONFIGURATION ---
         const CONFIG = {
@@ -179,31 +166,30 @@
 
         const STATE = {
             mode: 'TREE', 
-            focusIndex: -1, 
             focusTarget: null,
-            hand: { detected: false, x: 0, y: 0 },
-            rotation: { x: 0, y: 0 } 
+            rotation: { x: 0, y: 0 },
+            mouse: new THREE.Vector2() // For raycasting
         };
 
-        let scene, camera, renderer, composer;
+        let scene, camera, renderer, composer, controls; // Added controls
         let mainGroup; 
         let clock = new THREE.Clock();
         let particleSystem = []; 
         let photoMeshGroup = new THREE.Group();
-        let handLandmarker, video, webcamCanvas, webcamCtx;
+        let raycaster = new THREE.Raycaster(); // Added raycaster
         let caneTexture; 
 
         async function init() {
             initThree();
             setupEnvironment(); 
+            setupControls(); // New controls setup
             setupLights();
             createTextures();
             createParticles(); 
             createDust();      
-            createDefaultPhotos(); // Calls the function to randomly load your assets
+            createDefaultPhotos(); 
             setupPostProcessing();
             setupEvents();
-            await initMediaPipe();
             
             const loader = document.getElementById('loader');
             loader.style.opacity = 0;
@@ -230,6 +216,18 @@
 
             mainGroup = new THREE.Group();
             scene.add(mainGroup);
+        }
+
+        function setupControls() {
+            // Setup OrbitControls for mouse interaction
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // smooth rotation
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false;
+            controls.minDistance = 25;
+            controls.maxDistance = 60;
+            controls.target.set(0, 8, 0); // Focus the controls on the center of the tree
+            camera.position.set(0, 10, 50); // Reset camera position to see the whole tree
         }
 
         function setupEnvironment() {
@@ -300,7 +298,6 @@
                 this.posScatter = new THREE.Vector3();
                 this.baseScale = mesh.scale.x; 
 
-                // Individual Spin Speed
                 const speedMult = (type === 'PHOTO') ? 0.3 : 2.0;
 
                 this.spinSpeed = new THREE.Vector3(
@@ -313,7 +310,6 @@
             }
 
             calculatePositions() {
-                // TREE: Tight Spiral
                 const h = CONFIG.particles.treeHeight;
                 const halfH = h / 2;
                 let t = Math.random(); 
@@ -325,7 +321,6 @@
                 const r = rMax * (0.8 + Math.random() * 0.4); 
                 this.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
 
-                // SCATTER: 3D Sphere
                 let rScatter = this.isDust ? (12 + Math.random()*20) : (8 + Math.random()*12);
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.acos(2 * Math.random() - 1);
@@ -342,9 +337,13 @@
                 if (mode === 'SCATTER') target = this.posScatter;
                 else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) {
-                        const desiredWorldPos = new THREE.Vector3(0, 2, 35);
+                        // Move focused photo to a fixed position relative to the camera
+                        // Note: OrbitControls is now handling camera movement, 
+                        // so we lock the target position close to the camera's view target.
+                        const targetWorldPos = controls.target.clone().add(new THREE.Vector3(0, 0, 10));
                         const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
-                        target = desiredWorldPos.applyMatrix4(invMatrix);
+                        target = targetWorldPos.applyMatrix4(invMatrix);
+
                     } else {
                         target = this.posScatter;
                     }
@@ -360,13 +359,13 @@
                     this.mesh.rotation.y += this.spinSpeed.y * dt;
                     this.mesh.rotation.z += this.spinSpeed.z * dt;
                 } else if (mode === 'TREE') {
-                    // Reset rotations slowly
                     this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
                     this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
                     this.mesh.rotation.y += 0.5 * dt; 
                 }
                 
                 if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
+                    // Face the camera
                     this.mesh.lookAt(camera.position); 
                 }
 
@@ -376,7 +375,6 @@
                     s = this.baseScale * (0.8 + 0.4 * Math.sin(clock.elapsedTime * 4 + this.mesh.id));
                     if (mode === 'TREE') s = 0; 
                 } else if (mode === 'SCATTER' && this.type === 'PHOTO') {
-                    // Large preview size in scatter
                     s = this.baseScale * 2.5; 
                 } else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) s = 4.5; 
@@ -387,8 +385,9 @@
             }
         }
 
-        // --- CREATION ---
+        // --- CREATION (Rest of particle setup omitted for brevity but assumed to be present) ---
         function createParticles() {
+            // ... (Contains original particle creation logic)
             const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); 
             const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
             const curve = new THREE.CatmullRomCurve3([
@@ -398,48 +397,28 @@
             const candyGeo = new THREE.TubeGeometry(curve, 16, 0.08, 8, false);
 
             const goldMat = new THREE.MeshStandardMaterial({
-                color: CONFIG.colors.champagneGold,
-                metalness: 1.0, roughness: 0.1,
-                envMapIntensity: 2.0, 
-                emissive: 0x443300,    
-                emissiveIntensity: 0.3
+                color: CONFIG.colors.champagneGold, metalness: 1.0, roughness: 0.1,
+                envMapIntensity: 2.0, emissive: 0x443300, emissiveIntensity: 0.3
             });
-
             const greenMat = new THREE.MeshStandardMaterial({
-                color: CONFIG.colors.deepGreen,
-                metalness: 0.2, roughness: 0.8,
-                emissive: 0x002200,
-                emissiveIntensity: 0.2 
+                color: CONFIG.colors.deepGreen, metalness: 0.2, roughness: 0.8,
+                emissive: 0x002200, emissiveIntensity: 0.2 
             });
-
             const redMat = new THREE.MeshPhysicalMaterial({
-                color: CONFIG.colors.accentRed,
-                metalness: 0.3, roughness: 0.2, clearcoat: 1.0,
+                color: CONFIG.colors.accentRed, metalness: 0.3, roughness: 0.2, clearcoat: 1.0,
                 emissive: 0x330000
             });
-            
             const candyMat = new THREE.MeshStandardMaterial({ map: caneTexture, roughness: 0.4 });
 
             for (let i = 0; i < CONFIG.particles.count; i++) {
                 const rand = Math.random();
                 let mesh, type;
                 
-                if (rand < 0.40) {
-                    mesh = new THREE.Mesh(boxGeo, greenMat);
-                    type = 'BOX';
-                } else if (rand < 0.70) {
-                    mesh = new THREE.Mesh(boxGeo, goldMat);
-                    type = 'GOLD_BOX';
-                } else if (rand < 0.92) {
-                    mesh = new THREE.Mesh(sphereGeo, goldMat);
-                    type = 'GOLD_SPHERE';
-                } else if (rand < 0.97) {
-                    mesh = new THREE.Mesh(sphereGeo, redMat);
-                    type = 'RED';
-                } else {
-                    mesh = new THREE.Mesh(candyGeo, candyMat);
-                    type = 'CANE';
-                }
+                if (rand < 0.40) { mesh = new THREE.Mesh(boxGeo, greenMat); type = 'BOX'; } 
+                else if (rand < 0.70) { mesh = new THREE.Mesh(boxGeo, goldMat); type = 'GOLD_BOX'; } 
+                else if (rand < 0.92) { mesh = new THREE.Mesh(sphereGeo, goldMat); type = 'GOLD_SPHERE'; } 
+                else if (rand < 0.97) { mesh = new THREE.Mesh(sphereGeo, redMat); type = 'RED'; } 
+                else { mesh = new THREE.Mesh(candyGeo, candyMat); type = 'CANE'; }
 
                 const s = 0.4 + Math.random() * 0.5;
                 mesh.scale.set(s,s,s);
@@ -462,6 +441,7 @@
         }
 
         function createDust() {
+             // ... (Contains original dust creation logic)
             const geo = new THREE.TetrahedronGeometry(0.08, 0);
             const mat = new THREE.MeshBasicMaterial({ color: 0xffeebb, transparent: true, opacity: 0.8 });
             
@@ -473,9 +453,6 @@
             }
         }
 
-        /**
-         * Loads a random image from the IMAGE_ASSET_PATHS array.
-         */
         function createDefaultPhotos() {
             const loader = new THREE.TextureLoader();
             
@@ -484,30 +461,23 @@
                 return;
             }
             
-            // Randomly select an image path
             const randomIndex = Math.floor(Math.random() * IMAGE_ASSET_PATHS.length);
             const imagePath = IMAGE_ASSET_PATHS[randomIndex];
             
-            // Load the selected image
             loader.load(imagePath, (t) => {
                 t.colorSpace = THREE.SRGBColorSpace;
                 
-                // Add the main photo and three clones as ornaments
-                addPhotoToScene(t);
-                addPhotoToScene(t.clone());
-                addPhotoToScene(t.clone());
-                addPhotoToScene(t.clone());
+                // Add four copies of the randomly selected photo
+                for(let i=0; i<4; i++) {
+                     addPhotoToScene(t.clone());
+                }
 
             }, undefined, (error) => {
                 console.error('An error occurred while loading the preset image:', imagePath, error);
-                // Fallback if the image fails to load (e.g., wrong path)
                 createFallbackTextPhoto(); 
             });
         }
         
-        /**
-         * Fallback function that creates a text-based photo ornament.
-         */
         function createFallbackTextPhoto() {
             const canvas = document.createElement('canvas');
             canvas.width = 512; canvas.height = 512;
@@ -523,7 +493,6 @@
             tex.colorSpace = THREE.SRGBColorSpace;
             addPhotoToScene(tex);
         }
-
 
         function addPhotoToScene(texture) {
             const frameGeo = new THREE.BoxGeometry(1.4, 1.4, 0.05);
@@ -545,75 +514,51 @@
             photoMeshGroup.add(group);
             particleSystem.push(new Particle(group, 'PHOTO', false));
         }
-        
-        // --- MEDIAPIPE ---
-        async function initMediaPipe() {
-            video = document.getElementById('webcam');
-            webcamCanvas = document.getElementById('webcam-preview');
-            webcamCtx = webcamCanvas.getContext('2d');
-            webcamCanvas.width = 160; webcamCanvas.height = 120;
 
-            const vision = await FilesetResolver.forVisionTasks(
-                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-            );
-            handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                    delegate: "GPU"
-                },
-                runningMode: "VIDEO",
-                numHands: 1
-            });
-            
-            if (navigator.mediaDevices?.getUserMedia) {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-                video.addEventListener("loadeddata", predictWebcam);
-            }
-        }
+        // --- INTERACTION LOGIC ---
 
-        let lastVideoTime = -1;
-        async function predictWebcam() {
-            if (video.currentTime !== lastVideoTime) {
-                lastVideoTime = video.currentTime;
-                if (handLandmarker) {
-                    const result = handLandmarker.detectForVideo(video, performance.now());
-                    processGestures(result);
+        function onMouseClick(event) {
+            // Calculate mouse position in normalized device coordinates (-1 to +1)
+            STATE.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            STATE.mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update the raycaster with the camera and mouse position
+            raycaster.setFromCamera(STATE.mouse, camera);
+
+            // Calculate objects intersecting the ray
+            const intersects = raycaster.intersectObjects(photoMeshGroup.children, true);
+
+            if (intersects.length > 0) {
+                // Find the PHOTO group (which is the parent of the intersected mesh)
+                let clickedGroup = intersects[0].object.parent;
+                if (clickedGroup.parent !== photoMeshGroup) {
+                    // This handles clicks on the plane or the frame inside the main group
+                    clickedGroup = intersects[0].object.parent.parent;
                 }
-            }
-            requestAnimationFrame(predictWebcam);
-        }
-
-        function processGestures(result) {
-            if (result.landmarks && result.landmarks.length > 0) {
-                STATE.hand.detected = true;
-                const lm = result.landmarks[0];
-                STATE.hand.x = (lm[9].x - 0.5) * 2; 
-                STATE.hand.y = (lm[9].y - 0.5) * 2;
-
-                const thumb = lm[4]; const index = lm[8]; const wrist = lm[0];
-                const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y);
-                const tips = [lm[8], lm[12], lm[16], lm[20]];
-                let avgDist = 0;
-                tips.forEach(t => avgDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
-                avgDist /= 4;
-
-                if (pinchDist < 0.05) {
-                    if (STATE.mode !== 'FOCUS') {
-                        STATE.mode = 'FOCUS';
-                        const photos = particleSystem.filter(p => p.type === 'PHOTO');
-                        if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random()*photos.length)].mesh;
-                    }
-                } else if (avgDist < 0.25) {
-                    STATE.mode = 'TREE';
-                    STATE.focusTarget = null;
-                } else if (avgDist > 0.4) {
-                    STATE.mode = 'SCATTER';
-                    STATE.focusTarget = null;
+                
+                if (clickedGroup.parent === photoMeshGroup) {
+                    // Set the mode to FOCUS and the target to the clicked photo
+                    STATE.mode = 'FOCUS';
+                    STATE.focusTarget = clickedGroup;
                 }
             } else {
-                STATE.hand.detected = false;
+                // If nothing is clicked, scatter the particles for a moment
+                STATE.mode = 'SCATTER';
+                STATE.focusTarget = null;
+                
+                // Automatically return to TREE mode after 1.5 seconds if no photo was clicked
+                setTimeout(() => {
+                    if (STATE.mode === 'SCATTER' && STATE.focusTarget === null) {
+                         STATE.mode = 'TREE';
+                    }
+                }, 1500);
             }
+        }
+        
+        function onDoubleClick() {
+            // Double-click always resets to the main TREE view
+            STATE.mode = 'TREE';
+            STATE.focusTarget = null;
         }
 
         function setupEvents() {
@@ -624,7 +569,11 @@
                 composer.setSize(window.innerWidth, window.innerHeight);
             });
             
-            // Toggle UI logic - ONLY hide controls hint
+            // Mouse controls
+            window.addEventListener('click', onMouseClick, false);
+            window.addEventListener('dblclick', onDoubleClick, false);
+            
+            // Toggle UI logic
             window.addEventListener('keydown', (e) => {
                 if (e.key.toLowerCase() === 'h') {
                     const hint = document.getElementById('controls-hint');
@@ -637,23 +586,22 @@
             requestAnimationFrame(animate);
             const dt = clock.getDelta();
 
-            // Rotation Logic
-            if (STATE.mode === 'SCATTER' && STATE.hand.detected) {
-                const targetRotY = STATE.hand.x * Math.PI * 0.9; 
-                const targetRotX = STATE.hand.y * Math.PI * 0.25;
-                STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
-                STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
-            } else {
-                if(STATE.mode === 'TREE') {
-                    STATE.rotation.y += 0.3 * dt;
-                    STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
-                } else {
-                     STATE.rotation.y += 0.1 * dt; 
-                }
+            // OrbitControls handles all manual camera rotation/interaction
+            controls.update();
+
+            // Manual group rotation only applies when in TREE mode
+            if(STATE.mode === 'TREE') {
+                mainGroup.rotation.y += 0.3 * dt;
+                mainGroup.rotation.x = THREE.MathUtils.lerp(mainGroup.rotation.x, 0, 2.0 * dt);
+            } else if (STATE.mode === 'SCATTER') {
+                mainGroup.rotation.y += 0.1 * dt; 
+            }
+            
+            // In focus mode, slightly move the focus point to keep the user engaged
+            if(STATE.mode === 'FOCUS') {
+                controls.target.y = THREE.MathUtils.lerp(controls.target.y, 8 + Math.sin(clock.elapsedTime * 0.5) * 0.5, 0.05);
             }
 
-            mainGroup.rotation.y = STATE.rotation.y;
-            mainGroup.rotation.x = STATE.rotation.x;
 
             particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
             composer.render();
