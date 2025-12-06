@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -63,8 +63,8 @@
             pointer-events: auto;
             transition: opacity 0.5s ease;
         }
-
-        /* Webcam feedback - Removed, but keeping general style for cleanup */
+        
+        /* Ensure no leftover webcam elements are visible */
         #webcam-wrapper { display: none; }
     </style>
     
@@ -77,7 +77,6 @@
             "imports": {
                 "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
                 "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-                /* MediaPipe import removed */
             }
         }
     </script>
@@ -168,21 +167,21 @@
             mode: 'TREE', 
             focusTarget: null,
             rotation: { x: 0, y: 0 },
-            mouse: new THREE.Vector2() // For raycasting
+            mouse: new THREE.Vector2() 
         };
 
-        let scene, camera, renderer, composer, controls; // Added controls
+        let scene, camera, renderer, composer, controls; 
         let mainGroup; 
         let clock = new THREE.Clock();
         let particleSystem = []; 
         let photoMeshGroup = new THREE.Group();
-        let raycaster = new THREE.Raycaster(); // Added raycaster
+        let raycaster = new THREE.Raycaster(); 
         let caneTexture; 
 
         async function init() {
             initThree();
             setupEnvironment(); 
-            setupControls(); // New controls setup
+            setupControls(); 
             setupLights();
             createTextures();
             createParticles(); 
@@ -191,6 +190,7 @@
             setupPostProcessing();
             setupEvents();
             
+            // Hide loader after setup
             const loader = document.getElementById('loader');
             loader.style.opacity = 0;
             setTimeout(() => loader.remove(), 800);
@@ -221,13 +221,13 @@
         function setupControls() {
             // Setup OrbitControls for mouse interaction
             controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; // smooth rotation
+            controls.enableDamping = true; 
             controls.dampingFactor = 0.05;
             controls.screenSpacePanning = false;
             controls.minDistance = 25;
             controls.maxDistance = 60;
-            controls.target.set(0, 8, 0); // Focus the controls on the center of the tree
-            camera.position.set(0, 10, 50); // Reset camera position to see the whole tree
+            controls.target.set(0, 8, 0); 
+            camera.position.set(0, 10, 50); 
         }
 
         function setupEnvironment() {
@@ -278,6 +278,7 @@
             ctx.fillRect(0,0,128,128);
             ctx.fillStyle = '#880000'; 
             ctx.beginPath();
+            // Candy cane stripes
             for(let i=-128; i<256; i+=32) {
                 ctx.moveTo(i, 0); ctx.lineTo(i+32, 128); ctx.lineTo(i+16, 128); ctx.lineTo(i-16, 0);
             }
@@ -337,9 +338,7 @@
                 if (mode === 'SCATTER') target = this.posScatter;
                 else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) {
-                        // Move focused photo to a fixed position relative to the camera
-                        // Note: OrbitControls is now handling camera movement, 
-                        // so we lock the target position close to the camera's view target.
+                        // Move focused photo to a fixed position relative to the target of OrbitControls
                         const targetWorldPos = controls.target.clone().add(new THREE.Vector3(0, 0, 10));
                         const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
                         target = targetWorldPos.applyMatrix4(invMatrix);
@@ -385,9 +384,8 @@
             }
         }
 
-        // --- CREATION (Rest of particle setup omitted for brevity but assumed to be present) ---
+        // --- CREATION FUNCTIONS ---
         function createParticles() {
-            // ... (Contains original particle creation logic)
             const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); 
             const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
             const curve = new THREE.CatmullRomCurve3([
@@ -428,6 +426,7 @@
                 particleSystem.push(new Particle(mesh, type, false));
             }
 
+            // Star topper
             const starGeo = new THREE.OctahedronGeometry(1.2, 0);
             const starMat = new THREE.MeshStandardMaterial({
                 color: 0xffdd88, emissive: 0xffaa00, emissiveIntensity: 1.0,
@@ -441,7 +440,6 @@
         }
 
         function createDust() {
-             // ... (Contains original dust creation logic)
             const geo = new THREE.TetrahedronGeometry(0.08, 0);
             const mat = new THREE.MeshBasicMaterial({ color: 0xffeebb, transparent: true, opacity: 0.8 });
             
@@ -471,7 +469,7 @@
                 for(let i=0; i<4; i++) {
                      addPhotoToScene(t.clone());
                 }
-
+                
             }, undefined, (error) => {
                 console.error('An error occurred while loading the preset image:', imagePath, error);
                 createFallbackTextPhoto(); 
@@ -491,7 +489,10 @@
             
             const tex = new THREE.CanvasTexture(canvas);
             tex.colorSpace = THREE.SRGBColorSpace;
-            addPhotoToScene(tex);
+            // Add four copies of the fallback photo
+            for(let i=0; i<4; i++) {
+                 addPhotoToScene(tex.clone());
+            }
         }
 
         function addPhotoToScene(texture) {
@@ -529,17 +530,21 @@
             const intersects = raycaster.intersectObjects(photoMeshGroup.children, true);
 
             if (intersects.length > 0) {
-                // Find the PHOTO group (which is the parent of the intersected mesh)
-                let clickedGroup = intersects[0].object.parent;
-                if (clickedGroup.parent !== photoMeshGroup) {
-                    // This handles clicks on the plane or the frame inside the main group
-                    clickedGroup = intersects[0].object.parent.parent;
-                }
+                // Find the top-level PHOTO group (child of photoMeshGroup)
+                let clickedGroup = intersects[0].object;
                 
+                // Traverse up the object hierarchy until the parent is photoMeshGroup
+                while (clickedGroup.parent && clickedGroup.parent !== photoMeshGroup) {
+                    clickedGroup = clickedGroup.parent;
+                }
+
                 if (clickedGroup.parent === photoMeshGroup) {
-                    // Set the mode to FOCUS and the target to the clicked photo
+                    // 1. Set the mode and target
                     STATE.mode = 'FOCUS';
                     STATE.focusTarget = clickedGroup;
+                    
+                    // 2. Adjust OrbitControls target to center on the photo
+                    controls.target.copy(clickedGroup.position);
                 }
             } else {
                 // If nothing is clicked, scatter the particles for a moment
@@ -559,6 +564,9 @@
             // Double-click always resets to the main TREE view
             STATE.mode = 'TREE';
             STATE.focusTarget = null;
+            // Reset controls target to the center of the tree
+            controls.target.set(0, 8, 0);
+            // Optionally reset camera position for a full reset feel (smoothly done by controls)
         }
 
         function setupEvents() {
@@ -589,7 +597,7 @@
             // OrbitControls handles all manual camera rotation/interaction
             controls.update();
 
-            // Manual group rotation only applies when in TREE mode
+            // Manual group rotation only applies when in TREE or SCATTER mode
             if(STATE.mode === 'TREE') {
                 mainGroup.rotation.y += 0.3 * dt;
                 mainGroup.rotation.x = THREE.MathUtils.lerp(mainGroup.rotation.x, 0, 2.0 * dt);
@@ -597,9 +605,10 @@
                 mainGroup.rotation.y += 0.1 * dt; 
             }
             
-            // In focus mode, slightly move the focus point to keep the user engaged
+            // Slight vertical bobbing for the focus target to keep things dynamic
             if(STATE.mode === 'FOCUS') {
-                controls.target.y = THREE.MathUtils.lerp(controls.target.y, 8 + Math.sin(clock.elapsedTime * 0.5) * 0.5, 0.05);
+                // Smoothly adjust the control target's height based on time
+                controls.target.y = THREE.MathUtils.lerp(controls.target.y, STATE.focusTarget.position.y + Math.sin(clock.elapsedTime * 0.5) * 0.1, 0.05);
             }
 
 
