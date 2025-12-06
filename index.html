@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grand Luxury Tree Final v4 (Mouse Controlled)</title>
+    <title>Grand Luxury Tree Final v11 (Rebalanced Center)</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Times New Roman', serif; }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
@@ -94,7 +94,7 @@
         <h1>Merry Christmas</h1>
         
         <div class="hint-text" id="controls-hint">
-            Click photo to **Focus** | Double-Click to **Reset** | Drag to **Rotate**
+            Click photo to **Focus** | Double-Click to **Reset View** | Press **S** to **Scatter**
         </div>
     </div>
 
@@ -112,34 +112,13 @@
         // === CUSTOM CONFIGURATION (ASSET LIST) ===
         // =========================================================
         const IMAGE_ASSET_PATHS = [
-            'assets/1.jpg',
-            'assets/2.jpg',
-            'assets/3.jpg',
-            'assets/4.jpg',
-            'assets/5.jpg',
-            'assets/6.jpg',
-            'assets/7.jpg',
-            'assets/8.jpg',
-            'assets/9.jpg',
-            'assets/10.jpg',
-            'assets/11.jpg',
-            'assets/12.jpg',
-            'assets/13.jpg',
-            'assets/14.jpg',
-            'assets/15.jpg',
-            'assets/16.jpg',
-            'assets/17.jpg',
-            'assets/18.jpg',
-            'assets/19.jpg',
-            'assets/20.jpg',
-            'assets/21.jpg',
-            'assets/22.jpg',
-            'assets/23.jpg',
-            'assets/24.jpg',
-            'assets/25.jpg',
-            'assets/26.jpg',
-            'assets/27.jpg',
-            'assets/28.jpg'
+            'assets/1.jpg', 'assets/2.jpg', 'assets/3.jpg', 'assets/4.jpg', 
+            'assets/5.jpg', 'assets/6.jpg', 'assets/7.jpg', 'assets/8.jpg',
+            'assets/9.jpg', 'assets/10.jpg', 'assets/11.jpg', 'assets/12.jpg', 
+            'assets/13.jpg', 'assets/14.jpg', 'assets/15.jpg', 'assets/16.jpg',
+            'assets/17.jpg', 'assets/18.jpg', 'assets/19.jpg', 'assets/20.jpg', 
+            'assets/21.jpg', 'assets/22.jpg', 'assets/23.jpg', 'assets/24.jpg',
+            'assets/25.jpg', 'assets/26.jpg', 'assets/27.jpg', 'assets/28.jpg'
         ];
         // =========================================================
 
@@ -155,6 +134,7 @@
             particles: {
                 count: 1500,      
                 dustCount: 2500,  
+                snowCount: 1500, 
                 treeHeight: 24,   
                 treeRadius: 8    
             },
@@ -174,9 +154,11 @@
         let mainGroup; 
         let clock = new THREE.Clock();
         let particleSystem = []; 
+        let snowParticles = []; 
         let photoMeshGroup = new THREE.Group();
         let raycaster = new THREE.Raycaster(); 
         let caneTexture; 
+        let clickTimer = null; 
 
         async function init() {
             initThree();
@@ -187,6 +169,7 @@
             createParticles(); 
             createDust();      
             createDefaultPhotos(); 
+            createSnow(); 
             setupPostProcessing();
             setupEvents();
             
@@ -205,7 +188,9 @@
             scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.01); 
 
             camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 2, CONFIG.camera.z); 
+            // ADJUSTED: Raised camera Y position to 15
+            camera.position.set(0, 15, CONFIG.camera.z); 
+            scene.add(camera); 
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -219,22 +204,22 @@
         }
 
         function setupControls() {
-            // Setup OrbitControls for mouse interaction
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true; 
             controls.dampingFactor = 0.05;
             controls.screenSpacePanning = false;
-            controls.minDistance = 25;
+            controls.minDistance = 5; 
             controls.maxDistance = 60;
-            controls.target.set(0, 8, 0); 
-            camera.position.set(0, 10, 50); 
+            
+            // ADJUSTED: Set target Y back to 12 (geometric center)
+            controls.target.set(0, 12, 0); 
         }
 
         function setupEnvironment() {
             const pmremGenerator = new THREE.PMREMGenerator(renderer);
             scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
         }
-
+        
         function setupLights() {
             const ambient = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambient);
@@ -289,6 +274,41 @@
             caneTexture.repeat.set(3, 3);
         }
 
+        function createSnow() {
+            const geo = new THREE.TetrahedronGeometry(0.1, 0);
+            const mat = new THREE.MeshBasicMaterial({ 
+                color: 0xffffff, 
+                transparent: true, 
+                opacity: 0.8,
+            });
+
+            const snowGroup = new THREE.Group();
+            scene.add(snowGroup);
+
+            for (let i = 0; i < CONFIG.particles.snowCount; i++) {
+                const mesh = new THREE.Mesh(geo, mat);
+                const s = 0.5 + Math.random() * 0.5;
+                mesh.scale.setScalar(s);
+                
+                // Initial placement: Far above the tree, spread out
+                mesh.position.set(
+                    (Math.random() - 0.5) * 100, // X range
+                    (Math.random() * 50) + 20,   // Y (Start high)
+                    (Math.random() - 0.5) * 100  // Z range
+                );
+                
+                snowGroup.add(mesh);
+                
+                // Store position and properties for the update loop
+                snowParticles.push({
+                    mesh: mesh,
+                    speed: 0.5 + Math.random() * 0.5,
+                    sway: Math.random() * 10,
+                    initialX: mesh.position.x
+                });
+            }
+        }
+
         class Particle {
             constructor(mesh, type, isDust = false) {
                 this.mesh = mesh;
@@ -338,11 +358,10 @@
                 if (mode === 'SCATTER') target = this.posScatter;
                 else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) {
-                        // Move focused photo to a fixed position relative to the target of OrbitControls
-                        const targetWorldPos = controls.target.clone().add(new THREE.Vector3(0, 0, 10));
+                        // Keep +3 Y offset for high focus point
+                        const targetWorldPos = controls.target.clone().add(new THREE.Vector3(0, 3, 8)); 
                         const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
                         target = targetWorldPos.applyMatrix4(invMatrix);
-
                     } else {
                         target = this.posScatter;
                     }
@@ -364,7 +383,6 @@
                 }
                 
                 if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
-                    // Face the camera
                     this.mesh.lookAt(camera.position); 
                 }
 
@@ -384,7 +402,6 @@
             }
         }
 
-        // --- CREATION FUNCTIONS ---
         function createParticles() {
             const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); 
             const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
@@ -426,7 +443,6 @@
                 particleSystem.push(new Particle(mesh, type, false));
             }
 
-            // Star topper
             const starGeo = new THREE.OctahedronGeometry(1.2, 0);
             const starMat = new THREE.MeshStandardMaterial({
                 color: 0xffdd88, emissive: 0xffaa00, emissiveIntensity: 1.0,
@@ -459,21 +475,22 @@
                 return;
             }
             
-            const randomIndex = Math.floor(Math.random() * IMAGE_ASSET_PATHS.length);
-            const imagePath = IMAGE_ASSET_PATHS[randomIndex];
+            const imagesToLoad = Math.min(4, IMAGE_ASSET_PATHS.length);
             
-            loader.load(imagePath, (t) => {
-                t.colorSpace = THREE.SRGBColorSpace;
+            for(let i = 0; i < imagesToLoad; i++) {
+                const imagePath = IMAGE_ASSET_PATHS[i];
                 
-                // Add four copies of the randomly selected photo
-                for(let i=0; i<4; i++) {
-                     addPhotoToScene(t.clone());
-                }
-                
-            }, undefined, (error) => {
-                console.error('An error occurred while loading the preset image:', imagePath, error);
-                createFallbackTextPhoto(); 
-            });
+                loader.load(imagePath, (t) => {
+                    t.colorSpace = THREE.SRGBColorSpace;
+                    addPhotoToScene(t); 
+                }, undefined, (error) => {
+                    console.error('An error occurred while loading image:', imagePath, error);
+                });
+            }
+
+            if (imagesToLoad === 0) {
+                createFallbackTextPhoto();
+            }
         }
         
         function createFallbackTextPhoto() {
@@ -489,10 +506,7 @@
             
             const tex = new THREE.CanvasTexture(canvas);
             tex.colorSpace = THREE.SRGBColorSpace;
-            // Add four copies of the fallback photo
-            for(let i=0; i<4; i++) {
-                 addPhotoToScene(tex.clone());
-            }
+            addPhotoToScene(tex);
         }
 
         function addPhotoToScene(texture) {
@@ -516,57 +530,57 @@
             particleSystem.push(new Particle(group, 'PHOTO', false));
         }
 
-        // --- INTERACTION LOGIC ---
 
-        function onMouseClick(event) {
-            // Calculate mouse position in normalized device coordinates (-1 to +1)
+        function handleSingleClick(event) {
+            
             STATE.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             STATE.mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
 
-            // Update the raycaster with the camera and mouse position
             raycaster.setFromCamera(STATE.mouse, camera);
-
-            // Calculate objects intersecting the ray
             const intersects = raycaster.intersectObjects(photoMeshGroup.children, true);
 
             if (intersects.length > 0) {
-                // Find the top-level PHOTO group (child of photoMeshGroup)
                 let clickedGroup = intersects[0].object;
                 
-                // Traverse up the object hierarchy until the parent is photoMeshGroup
                 while (clickedGroup.parent && clickedGroup.parent !== photoMeshGroup) {
                     clickedGroup = clickedGroup.parent;
                 }
 
                 if (clickedGroup.parent === photoMeshGroup) {
-                    // 1. Set the mode and target
                     STATE.mode = 'FOCUS';
                     STATE.focusTarget = clickedGroup;
-                    
-                    // 2. Adjust OrbitControls target to center on the photo
                     controls.target.copy(clickedGroup.position);
+                    
+                    controls.dampingFactor = 0.1; 
+                    return; 
                 }
-            } else {
-                // If nothing is clicked, scatter the particles for a moment
-                STATE.mode = 'SCATTER';
-                STATE.focusTarget = null;
-                
-                // Automatically return to TREE mode after 1.5 seconds if no photo was clicked
-                setTimeout(() => {
-                    if (STATE.mode === 'SCATTER' && STATE.focusTarget === null) {
-                         STATE.mode = 'TREE';
-                    }
-                }, 1500);
             }
+        }
+
+        function onMouseClick(event) {
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+            }
+
+            clickTimer = setTimeout(() => {
+                handleSingleClick(event);
+                clickTimer = null; 
+            }, 200);
         }
         
         function onDoubleClick() {
-            // Double-click always resets to the main TREE view
+            if (clickTimer) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+            }
+            
             STATE.mode = 'TREE';
             STATE.focusTarget = null;
-            // Reset controls target to the center of the tree
-            controls.target.set(0, 8, 0);
-            // Optionally reset camera position for a full reset feel (smoothly done by controls)
+            
+            // Reset target to the new, balanced target
+            controls.target.set(0, 12, 0); 
+            controls.dampingFactor = 0.05;
         }
 
         function setupEvents() {
@@ -581,23 +595,62 @@
             window.addEventListener('click', onMouseClick, false);
             window.addEventListener('dblclick', onDoubleClick, false);
             
-            // Toggle UI logic
+            // Toggle UI logic & SCATTER CONTROL
             window.addEventListener('keydown', (e) => {
-                if (e.key.toLowerCase() === 'h') {
+                const key = e.key.toLowerCase();
+                
+                if (key === 'h') {
                     const hint = document.getElementById('controls-hint');
                     if (hint) hint.classList.toggle('ui-hidden');
+                } 
+                
+                // SCATTER Trigger on 'S' key press (No timer)
+                if (key === 's') {
+                    if (STATE.mode !== 'FOCUS') {
+                        STATE.mode = 'SCATTER';
+                        STATE.focusTarget = null;
+                        // Use new balanced target
+                        controls.target.set(0, 12, 0); 
+                        controls.dampingFactor = 0.05; 
+                    }
                 }
             });
         }
+        
+        function updateSnow(dt) {
+            const windStrength = 0.5;
+            const sceneHeight = 60;
+            const sceneWidth = 100;
+
+            snowParticles.forEach(p => {
+                const mesh = p.mesh;
+                
+                // Falling motion
+                mesh.position.y -= p.speed * dt * 5; 
+                
+                // Swaying (Wind simulation)
+                mesh.position.x = p.initialX + Math.sin(clock.elapsedTime * 0.5 + p.sway) * windStrength;
+
+                // Reset position if it falls below the view (y=-5)
+                if (mesh.position.y < -5) {
+                    mesh.position.y = sceneHeight / 2 + 10; // Reset to top
+                    mesh.position.x = (Math.random() - 0.5) * sceneWidth;
+                    mesh.position.z = (Math.random() - 0.5) * sceneWidth;
+                    p.initialX = mesh.position.x;
+                }
+            });
+        }
+
 
         function animate() {
             requestAnimationFrame(animate);
             const dt = clock.getDelta();
 
-            // OrbitControls handles all manual camera rotation/interaction
             controls.update();
 
-            // Manual group rotation only applies when in TREE or SCATTER mode
+            updateSnow(dt);
+
+            // Main group rotation in different modes
             if(STATE.mode === 'TREE') {
                 mainGroup.rotation.y += 0.3 * dt;
                 mainGroup.rotation.x = THREE.MathUtils.lerp(mainGroup.rotation.x, 0, 2.0 * dt);
@@ -605,12 +658,11 @@
                 mainGroup.rotation.y += 0.1 * dt; 
             }
             
-            // Slight vertical bobbing for the focus target to keep things dynamic
-            if(STATE.mode === 'FOCUS') {
-                // Smoothly adjust the control target's height based on time
+            // Camera target bobbing when focused
+            if(STATE.mode === 'FOCUS' && STATE.focusTarget) {
+                // Focus target moves slightly with sine wave
                 controls.target.y = THREE.MathUtils.lerp(controls.target.y, STATE.focusTarget.position.y + Math.sin(clock.elapsedTime * 0.5) * 0.1, 0.05);
             }
-
 
             particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
             composer.render();
