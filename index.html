@@ -183,7 +183,8 @@
         let particleSystem = []; 
         let photoMeshGroup = new THREE.Group();
         let handLandmarker, video, webcamCanvas, webcamCtx;
-        let caneTexture; 
+        let caneTexture;
+        let snowParticles = [];
 
         async function init() {
             initThree();
@@ -191,7 +192,8 @@
             setupLights();
             createTextures();
             createParticles(); 
-            createDust();     
+            createDust();
+            createSnow();
             createDefaultPhotos();
             setupPostProcessing();
             setupEvents();
@@ -466,6 +468,44 @@
             }
         }
 
+        function createSnow() {
+            const snowGeo = new THREE.BufferGeometry();
+            const snowCount = 1000;
+            const positions = new Float32Array(snowCount * 3);
+            const velocities = new Float32Array(snowCount * 3);
+            
+            for (let i = 0; i < snowCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 100;      // x
+                positions[i + 1] = Math.random() * 80 - 10;      // y
+                positions[i + 2] = (Math.random() - 0.5) * 100;  // z
+                
+                velocities[i] = (Math.random() - 0.5) * 0.5;     // vx
+                velocities[i + 1] = -Math.random() * 0.3 - 0.1;  // vy (falling)
+                velocities[i + 2] = (Math.random() - 0.5) * 0.5; // vz
+            }
+            
+            snowGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            snowGeo.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+            
+            const snowMat = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.3,
+                transparent: true,
+                opacity: 0.9,
+                sizeAttenuation: true
+            });
+            
+            const snowParticleSystem = new THREE.Points(snowGeo, snowMat);
+            scene.add(snowParticleSystem);
+            
+            snowParticles = {
+                system: snowParticleSystem,
+                positions: positions,
+                velocities: velocities,
+                count: snowCount
+            };
+        }
+
         function createDefaultPhotos() {
             const canvas = document.createElement('canvas');
             canvas.width = 512; canvas.height = 512;
@@ -588,6 +628,35 @@
             }
         }
 
+        function updateSnow() {
+            if (!snowParticles.system) return;
+            
+            const positions = snowParticles.positions;
+            const velocities = snowParticles.velocities;
+            const count = snowParticles.count;
+            
+            for (let i = 0; i < count * 3; i += 3) {
+                positions[i] += velocities[i] * 0.1;     // x
+                positions[i + 1] += velocities[i + 1] * 0.1; // y
+                positions[i + 2] += velocities[i + 2] * 0.1; // z
+                
+                // Reset snowflake when it falls below
+                if (positions[i + 1] < -15) {
+                    positions[i + 1] = 60 + Math.random() * 20;
+                    positions[i] = (Math.random() - 0.5) * 100;
+                    positions[i + 2] = (Math.random() - 0.5) * 100;
+                }
+                
+                // Wrap around edges
+                if (positions[i] > 50) positions[i] = -50;
+                if (positions[i] < -50) positions[i] = 50;
+                if (positions[i + 2] > 50) positions[i + 2] = -50;
+                if (positions[i + 2] < -50) positions[i + 2] = 50;
+            }
+            
+            snowParticles.system.geometry.attributes.position.needsUpdate = true;
+        }
+
         function setupEvents() {
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
@@ -629,6 +698,7 @@
             mainGroup.rotation.x = STATE.rotation.x;
 
             particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
+            updateSnow();
             composer.render();
         }
 
