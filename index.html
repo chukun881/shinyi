@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Grand Luxury Tree Final v11 (Rebalanced Center)</title>
+    <title>Grand Luxury Tree Final v2</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Times New Roman', serif; }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
@@ -16,8 +16,10 @@
             align-items: center;
             padding-top: 40px;
             box-sizing: border-box;
+            /* Remove transition here as we don't hide the whole layer anymore */
         }
         
+        /* When hidden class is applied to specific elements */
         .ui-hidden {
             opacity: 0;
             pointer-events: none !important;
@@ -50,22 +52,52 @@
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             font-family: 'Cinzel', 'Times New Roman', serif;
             opacity: 0.9;
-            transition: opacity 0.5s ease;
+            transition: opacity 0.5s ease; /* Ensure smooth transitions if needed */
         }
 
-        /* Control Hint */
+        /* Upload Button - Restored & Elegant */
+        .upload-wrapper {
+            margin-top: 20px;
+            pointer-events: auto;
+            text-align: center;
+            transition: opacity 0.5s ease; /* Add transition for smooth hiding */
+        }
+        .upload-btn {
+            background: rgba(20, 20, 20, 0.6); 
+            border: 1px solid rgba(212, 175, 55, 0.4); 
+            color: #d4af37; 
+            padding: 10px 25px; 
+            cursor: pointer; 
+            text-transform: uppercase; 
+            letter-spacing: 3px; 
+            font-size: 10px;
+            transition: all 0.4s;
+            display: inline-block;
+            backdrop-filter: blur(5px);
+        }
+        .upload-btn:hover { 
+            background: #d4af37; 
+            color: #000; 
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
+        }
         .hint-text {
             color: rgba(212, 175, 55, 0.5);
             font-size: 9px;
-            margin-top: 20px;
+            margin-top: 8px;
             letter-spacing: 1px;
             text-transform: uppercase;
-            pointer-events: auto;
-            transition: opacity 0.5s ease;
         }
-        
-        /* Ensure no leftover webcam elements are visible */
-        #webcam-wrapper { display: none; }
+
+        #file-input { display: none; }
+
+        /* Webcam feedback */
+        #webcam-wrapper {
+            position: absolute; bottom: 40px; right: 40px;
+            width: 120px; height: 90px;
+            border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden; opacity: 0; /* Hidden by default but functional */
+            pointer-events: none;
+        }
     </style>
     
     <style>
@@ -76,7 +108,8 @@
         {
             "imports": {
                 "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm"
             }
         }
     </script>
@@ -93,12 +126,20 @@
     <div id="ui-layer">
         <h1>Merry Christmas</h1>
         
-        <div class="hint-text" id="controls-hint">
-            Click photo to **Focus** | Double-Click to **Reset View** | Press **S** to **Scatter**
+        <div class="upload-wrapper">
+            <label class="upload-btn">
+                Add Memories
+                <input type="file" id="file-input" multiple accept="image/*">
+            </label>
+            <div class="hint-text">Press 'H' to Hide Controls</div>
         </div>
     </div>
 
-    <div id="webcam-wrapper"></div> 
+    <!-- Webcam hidden structure -->
+    <div id="webcam-wrapper">
+        <video id="webcam" autoplay playsinline style="display:none;"></video>
+        <canvas id="webcam-preview"></canvas>
+    </div>
 
     <script type="module">
         import * as THREE from 'three';
@@ -107,73 +148,55 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
-
-        // =========================================================
-        // === CUSTOM CONFIGURATION (ASSET LIST) ===
-        // =========================================================
-        const IMAGE_ASSET_PATHS = [
-            'assets/1.jpg', 'assets/2.jpg', 'assets/3.jpg', 'assets/4.jpg', 
-            'assets/5.jpg', 'assets/6.jpg', 'assets/7.jpg', 'assets/8.jpg',
-            'assets/9.jpg', 'assets/10.jpg', 'assets/11.jpg', 'assets/12.jpg', 
-            'assets/13.jpg', 'assets/14.jpg', 'assets/15.jpg', 'assets/16.jpg',
-            'assets/17.jpg', 'assets/18.jpg', 'assets/19.jpg', 'assets/20.jpg', 
-            'assets/21.jpg', 'assets/22.jpg', 'assets/23.jpg', 'assets/24.jpg',
-            'assets/25.jpg', 'assets/26.jpg', 'assets/27.jpg', 'assets/28.jpg'
-        ];
-        // =========================================================
-
+        import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
         // --- CONFIGURATION ---
         const CONFIG = {
             colors: {
                 bg: 0x000000, 
                 champagneGold: 0xffd966, 
-                deepGreen: 0x03180a,      
-                accentRed: 0x990000,      
+                deepGreen: 0x03180a,     
+                accentRed: 0x990000,     
             },
             particles: {
-                count: 1500,      
-                dustCount: 2500,  
-                snowCount: 1500, 
-                treeHeight: 24,   
+                count: 1500,     
+                dustCount: 2500, 
+                treeHeight: 24,  
                 treeRadius: 8    
             },
             camera: {
-                z: 50
+                z: 50 
             }
         };
 
         const STATE = {
             mode: 'TREE', 
+            focusIndex: -1, 
             focusTarget: null,
-            rotation: { x: 0, y: 0 },
-            mouse: new THREE.Vector2() 
+            hand: { detected: false, x: 0, y: 0 },
+            rotation: { x: 0, y: 0 } 
         };
 
-        let scene, camera, renderer, composer, controls; 
+        let scene, camera, renderer, composer;
         let mainGroup; 
         let clock = new THREE.Clock();
         let particleSystem = []; 
-        let snowParticles = []; 
         let photoMeshGroup = new THREE.Group();
-        let raycaster = new THREE.Raycaster(); 
+        let handLandmarker, video, webcamCanvas, webcamCtx;
         let caneTexture; 
-        let clickTimer = null; 
 
         async function init() {
             initThree();
             setupEnvironment(); 
-            setupControls(); 
             setupLights();
             createTextures();
             createParticles(); 
-            createDust();      
-            createDefaultPhotos(); 
-            createSnow(); 
+            createDust();     
+            createDefaultPhotos();
             setupPostProcessing();
             setupEvents();
+            await initMediaPipe();
             
-            // Hide loader after setup
             const loader = document.getElementById('loader');
             loader.style.opacity = 0;
             setTimeout(() => loader.remove(), 800);
@@ -188,9 +211,7 @@
             scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.01); 
 
             camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
-            // ADJUSTED: Raised camera Y position to 15
-            camera.position.set(0, 15, CONFIG.camera.z); 
-            scene.add(camera); 
+            camera.position.set(0, 2, CONFIG.camera.z); 
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -203,23 +224,11 @@
             scene.add(mainGroup);
         }
 
-        function setupControls() {
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true; 
-            controls.dampingFactor = 0.05;
-            controls.screenSpacePanning = false;
-            controls.minDistance = 5; 
-            controls.maxDistance = 60;
-            
-            // ADJUSTED: Set target Y back to 12 (geometric center)
-            controls.target.set(0, 12, 0); 
-        }
-
         function setupEnvironment() {
             const pmremGenerator = new THREE.PMREMGenerator(renderer);
             scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
         }
-        
+
         function setupLights() {
             const ambient = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambient);
@@ -263,7 +272,6 @@
             ctx.fillRect(0,0,128,128);
             ctx.fillStyle = '#880000'; 
             ctx.beginPath();
-            // Candy cane stripes
             for(let i=-128; i<256; i+=32) {
                 ctx.moveTo(i, 0); ctx.lineTo(i+32, 128); ctx.lineTo(i+16, 128); ctx.lineTo(i-16, 0);
             }
@@ -272,41 +280,6 @@
             caneTexture.wrapS = THREE.RepeatWrapping;
             caneTexture.wrapT = THREE.RepeatWrapping;
             caneTexture.repeat.set(3, 3);
-        }
-
-        function createSnow() {
-            const geo = new THREE.TetrahedronGeometry(0.1, 0);
-            const mat = new THREE.MeshBasicMaterial({ 
-                color: 0xffffff, 
-                transparent: true, 
-                opacity: 0.8,
-            });
-
-            const snowGroup = new THREE.Group();
-            scene.add(snowGroup);
-
-            for (let i = 0; i < CONFIG.particles.snowCount; i++) {
-                const mesh = new THREE.Mesh(geo, mat);
-                const s = 0.5 + Math.random() * 0.5;
-                mesh.scale.setScalar(s);
-                
-                // Initial placement: Far above the tree, spread out
-                mesh.position.set(
-                    (Math.random() - 0.5) * 100, // X range
-                    (Math.random() * 50) + 20,   // Y (Start high)
-                    (Math.random() - 0.5) * 100  // Z range
-                );
-                
-                snowGroup.add(mesh);
-                
-                // Store position and properties for the update loop
-                snowParticles.push({
-                    mesh: mesh,
-                    speed: 0.5 + Math.random() * 0.5,
-                    sway: Math.random() * 10,
-                    initialX: mesh.position.x
-                });
-            }
         }
 
         class Particle {
@@ -319,6 +292,8 @@
                 this.posScatter = new THREE.Vector3();
                 this.baseScale = mesh.scale.x; 
 
+                // Individual Spin Speed
+                // Photos spin slower to be readable
                 const speedMult = (type === 'PHOTO') ? 0.3 : 2.0;
 
                 this.spinSpeed = new THREE.Vector3(
@@ -331,6 +306,7 @@
             }
 
             calculatePositions() {
+                // TREE: Tight Spiral
                 const h = CONFIG.particles.treeHeight;
                 const halfH = h / 2;
                 let t = Math.random(); 
@@ -342,6 +318,7 @@
                 const r = rMax * (0.8 + Math.random() * 0.4); 
                 this.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
 
+                // SCATTER: 3D Sphere
                 let rScatter = this.isDust ? (12 + Math.random()*20) : (8 + Math.random()*12);
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.acos(2 * Math.random() - 1);
@@ -358,10 +335,9 @@
                 if (mode === 'SCATTER') target = this.posScatter;
                 else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) {
-                        // Keep +3 Y offset for high focus point
-                        const targetWorldPos = controls.target.clone().add(new THREE.Vector3(0, 3, 8)); 
+                        const desiredWorldPos = new THREE.Vector3(0, 2, 35);
                         const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
-                        target = targetWorldPos.applyMatrix4(invMatrix);
+                        target = desiredWorldPos.applyMatrix4(invMatrix);
                     } else {
                         target = this.posScatter;
                     }
@@ -371,12 +347,13 @@
                 const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0; 
                 this.mesh.position.lerp(target, lerpSpeed * dt);
 
-                // Rotation Logic
+                // Rotation Logic - CRITICAL: Ensure spin happens in Scatter
                 if (mode === 'SCATTER') {
                     this.mesh.rotation.x += this.spinSpeed.x * dt;
                     this.mesh.rotation.y += this.spinSpeed.y * dt;
-                    this.mesh.rotation.z += this.spinSpeed.z * dt;
+                    this.mesh.rotation.z += this.spinSpeed.z * dt; // Added Z for more natural tumble
                 } else if (mode === 'TREE') {
+                    // Reset rotations slowly
                     this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
                     this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
                     this.mesh.rotation.y += 0.5 * dt; 
@@ -392,6 +369,7 @@
                     s = this.baseScale * (0.8 + 0.4 * Math.sin(clock.elapsedTime * 4 + this.mesh.id));
                     if (mode === 'TREE') s = 0; 
                 } else if (mode === 'SCATTER' && this.type === 'PHOTO') {
+                    // Large preview size in scatter
                     s = this.baseScale * 2.5; 
                 } else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) s = 4.5; 
@@ -402,6 +380,7 @@
             }
         }
 
+        // --- CREATION ---
         function createParticles() {
             const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); 
             const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
@@ -412,28 +391,48 @@
             const candyGeo = new THREE.TubeGeometry(curve, 16, 0.08, 8, false);
 
             const goldMat = new THREE.MeshStandardMaterial({
-                color: CONFIG.colors.champagneGold, metalness: 1.0, roughness: 0.1,
-                envMapIntensity: 2.0, emissive: 0x443300, emissiveIntensity: 0.3
+                color: CONFIG.colors.champagneGold,
+                metalness: 1.0, roughness: 0.1,
+                envMapIntensity: 2.0, 
+                emissive: 0x443300,   
+                emissiveIntensity: 0.3
             });
+
             const greenMat = new THREE.MeshStandardMaterial({
-                color: CONFIG.colors.deepGreen, metalness: 0.2, roughness: 0.8,
-                emissive: 0x002200, emissiveIntensity: 0.2 
+                color: CONFIG.colors.deepGreen,
+                metalness: 0.2, roughness: 0.8,
+                emissive: 0x002200,
+                emissiveIntensity: 0.2 
             });
+
             const redMat = new THREE.MeshPhysicalMaterial({
-                color: CONFIG.colors.accentRed, metalness: 0.3, roughness: 0.2, clearcoat: 1.0,
+                color: CONFIG.colors.accentRed,
+                metalness: 0.3, roughness: 0.2, clearcoat: 1.0,
                 emissive: 0x330000
             });
+            
             const candyMat = new THREE.MeshStandardMaterial({ map: caneTexture, roughness: 0.4 });
 
             for (let i = 0; i < CONFIG.particles.count; i++) {
                 const rand = Math.random();
                 let mesh, type;
                 
-                if (rand < 0.40) { mesh = new THREE.Mesh(boxGeo, greenMat); type = 'BOX'; } 
-                else if (rand < 0.70) { mesh = new THREE.Mesh(boxGeo, goldMat); type = 'GOLD_BOX'; } 
-                else if (rand < 0.92) { mesh = new THREE.Mesh(sphereGeo, goldMat); type = 'GOLD_SPHERE'; } 
-                else if (rand < 0.97) { mesh = new THREE.Mesh(sphereGeo, redMat); type = 'RED'; } 
-                else { mesh = new THREE.Mesh(candyGeo, candyMat); type = 'CANE'; }
+                if (rand < 0.40) {
+                    mesh = new THREE.Mesh(boxGeo, greenMat);
+                    type = 'BOX';
+                } else if (rand < 0.70) {
+                    mesh = new THREE.Mesh(boxGeo, goldMat);
+                    type = 'GOLD_BOX';
+                } else if (rand < 0.92) {
+                    mesh = new THREE.Mesh(sphereGeo, goldMat);
+                    type = 'GOLD_SPHERE';
+                } else if (rand < 0.97) {
+                    mesh = new THREE.Mesh(sphereGeo, redMat);
+                    type = 'RED';
+                } else {
+                    mesh = new THREE.Mesh(candyGeo, candyMat);
+                    type = 'CANE';
+                }
 
                 const s = 0.4 + Math.random() * 0.5;
                 mesh.scale.set(s,s,s);
@@ -468,32 +467,6 @@
         }
 
         function createDefaultPhotos() {
-            const loader = new THREE.TextureLoader();
-            
-            if (IMAGE_ASSET_PATHS.length === 0) {
-                createFallbackTextPhoto();
-                return;
-            }
-            
-            const imagesToLoad = Math.min(4, IMAGE_ASSET_PATHS.length);
-            
-            for(let i = 0; i < imagesToLoad; i++) {
-                const imagePath = IMAGE_ASSET_PATHS[i];
-                
-                loader.load(imagePath, (t) => {
-                    t.colorSpace = THREE.SRGBColorSpace;
-                    addPhotoToScene(t); 
-                }, undefined, (error) => {
-                    console.error('An error occurred while loading image:', imagePath, error);
-                });
-            }
-
-            if (imagesToLoad === 0) {
-                createFallbackTextPhoto();
-            }
-        }
-        
-        function createFallbackTextPhoto() {
             const canvas = document.createElement('canvas');
             canvas.width = 512; canvas.height = 512;
             const ctx = canvas.getContext('2d');
@@ -529,58 +502,90 @@
             photoMeshGroup.add(group);
             particleSystem.push(new Particle(group, 'PHOTO', false));
         }
-
-
-        function handleSingleClick(event) {
-            
-            STATE.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            STATE.mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(STATE.mouse, camera);
-            const intersects = raycaster.intersectObjects(photoMeshGroup.children, true);
-
-            if (intersects.length > 0) {
-                let clickedGroup = intersects[0].object;
-                
-                while (clickedGroup.parent && clickedGroup.parent !== photoMeshGroup) {
-                    clickedGroup = clickedGroup.parent;
-                }
-
-                if (clickedGroup.parent === photoMeshGroup) {
-                    STATE.mode = 'FOCUS';
-                    STATE.focusTarget = clickedGroup;
-                    controls.target.copy(clickedGroup.position);
-                    
-                    controls.dampingFactor = 0.1; 
-                    return; 
-                }
-            }
-        }
-
-        function onMouseClick(event) {
-            if (clickTimer) {
-                clearTimeout(clickTimer);
-                clickTimer = null;
-            }
-
-            clickTimer = setTimeout(() => {
-                handleSingleClick(event);
-                clickTimer = null; 
-            }, 200);
-        }
         
-        function onDoubleClick() {
-            if (clickTimer) {
-                clearTimeout(clickTimer);
-                clickTimer = null;
+        function handleImageUpload(e) {
+            const files = e.target.files;
+            if(!files.length) return;
+            Array.from(files).forEach(f => {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    new THREE.TextureLoader().load(ev.target.result, (t) => {
+                        t.colorSpace = THREE.SRGBColorSpace;
+                        addPhotoToScene(t);
+                    });
+                }
+                reader.readAsDataURL(f);
+            });
+        }
+
+        // --- MEDIAPIPE ---
+        async function initMediaPipe() {
+            video = document.getElementById('webcam');
+            webcamCanvas = document.getElementById('webcam-preview');
+            webcamCtx = webcamCanvas.getContext('2d');
+            webcamCanvas.width = 160; webcamCanvas.height = 120;
+
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+            );
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO",
+                numHands: 1
+            });
+            
+            if (navigator.mediaDevices?.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.addEventListener("loadeddata", predictWebcam);
             }
-            
-            STATE.mode = 'TREE';
-            STATE.focusTarget = null;
-            
-            // Reset target to the new, balanced target
-            controls.target.set(0, 12, 0); 
-            controls.dampingFactor = 0.05;
+        }
+
+        let lastVideoTime = -1;
+        async function predictWebcam() {
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                if (handLandmarker) {
+                    const result = handLandmarker.detectForVideo(video, performance.now());
+                    processGestures(result);
+                }
+            }
+            requestAnimationFrame(predictWebcam);
+        }
+
+        function processGestures(result) {
+            if (result.landmarks && result.landmarks.length > 0) {
+                STATE.hand.detected = true;
+                const lm = result.landmarks[0];
+                STATE.hand.x = (lm[9].x - 0.5) * 2; 
+                STATE.hand.y = (lm[9].y - 0.5) * 2;
+
+                const thumb = lm[4]; const index = lm[8]; const wrist = lm[0];
+                const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y);
+                const tips = [lm[8], lm[12], lm[16], lm[20]];
+                let avgDist = 0;
+                tips.forEach(t => avgDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
+                avgDist /= 4;
+
+                if (pinchDist < 0.05) {
+                    if (STATE.mode !== 'FOCUS') {
+                        STATE.mode = 'FOCUS';
+                        const photos = particleSystem.filter(p => p.type === 'PHOTO');
+                        if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random()*photos.length)].mesh;
+                    }
+                } else if (avgDist < 0.25) {
+                    STATE.mode = 'TREE';
+                    STATE.focusTarget = null;
+                } else if (avgDist > 0.4) {
+                    STATE.mode = 'SCATTER';
+                    STATE.focusTarget = null;
+                }
+            } else {
+                STATE.hand.detected = false;
+            }
         }
 
         function setupEvents() {
@@ -590,79 +595,38 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 composer.setSize(window.innerWidth, window.innerHeight);
             });
+            document.getElementById('file-input').addEventListener('change', handleImageUpload);
             
-            // Mouse controls
-            window.addEventListener('click', onMouseClick, false);
-            window.addEventListener('dblclick', onDoubleClick, false);
-            
-            // Toggle UI logic & SCATTER CONTROL
+            // Toggle UI logic - ONLY hide controls, keep title
             window.addEventListener('keydown', (e) => {
-                const key = e.key.toLowerCase();
-                
-                if (key === 'h') {
-                    const hint = document.getElementById('controls-hint');
-                    if (hint) hint.classList.toggle('ui-hidden');
-                } 
-                
-                // SCATTER Trigger on 'S' key press (No timer)
-                if (key === 's') {
-                    if (STATE.mode !== 'FOCUS') {
-                        STATE.mode = 'SCATTER';
-                        STATE.focusTarget = null;
-                        // Use new balanced target
-                        controls.target.set(0, 12, 0); 
-                        controls.dampingFactor = 0.05; 
-                    }
+                if (e.key.toLowerCase() === 'h') {
+                    const controls = document.querySelector('.upload-wrapper');
+                    if (controls) controls.classList.toggle('ui-hidden');
                 }
             });
         }
-        
-        function updateSnow(dt) {
-            const windStrength = 0.5;
-            const sceneHeight = 60;
-            const sceneWidth = 100;
-
-            snowParticles.forEach(p => {
-                const mesh = p.mesh;
-                
-                // Falling motion
-                mesh.position.y -= p.speed * dt * 5; 
-                
-                // Swaying (Wind simulation)
-                mesh.position.x = p.initialX + Math.sin(clock.elapsedTime * 0.5 + p.sway) * windStrength;
-
-                // Reset position if it falls below the view (y=-5)
-                if (mesh.position.y < -5) {
-                    mesh.position.y = sceneHeight / 2 + 10; // Reset to top
-                    mesh.position.x = (Math.random() - 0.5) * sceneWidth;
-                    mesh.position.z = (Math.random() - 0.5) * sceneWidth;
-                    p.initialX = mesh.position.x;
-                }
-            });
-        }
-
 
         function animate() {
             requestAnimationFrame(animate);
             const dt = clock.getDelta();
 
-            controls.update();
-
-            updateSnow(dt);
-
-            // Main group rotation in different modes
-            if(STATE.mode === 'TREE') {
-                mainGroup.rotation.y += 0.3 * dt;
-                mainGroup.rotation.x = THREE.MathUtils.lerp(mainGroup.rotation.x, 0, 2.0 * dt);
-            } else if (STATE.mode === 'SCATTER') {
-                mainGroup.rotation.y += 0.1 * dt; 
+            // Rotation Logic
+            if (STATE.mode === 'SCATTER' && STATE.hand.detected) {
+                const targetRotY = STATE.hand.x * Math.PI * 0.9; 
+                const targetRotX = STATE.hand.y * Math.PI * 0.25;
+                STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
+                STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+            } else {
+                if(STATE.mode === 'TREE') {
+                    STATE.rotation.y += 0.3 * dt;
+                    STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
+                } else {
+                     STATE.rotation.y += 0.1 * dt; 
+                }
             }
-            
-            // Camera target bobbing when focused
-            if(STATE.mode === 'FOCUS' && STATE.focusTarget) {
-                // Focus target moves slightly with sine wave
-                controls.target.y = THREE.MathUtils.lerp(controls.target.y, STATE.focusTarget.position.y + Math.sin(clock.elapsedTime * 0.5) * 0.1, 0.05);
-            }
+
+            mainGroup.rotation.y = STATE.rotation.y;
+            mainGroup.rotation.x = STATE.rotation.x;
 
             particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
             composer.render();
